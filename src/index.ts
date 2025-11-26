@@ -123,7 +123,7 @@ const app = new Elysia({
     };
     const contentType = contentTypeMap[extension || ""] || "image/jpeg";
 
-    return new Response(image, {
+    return new Response(image as BodyInit, {
       headers: {
         "Content-Type": contentType,
       },
