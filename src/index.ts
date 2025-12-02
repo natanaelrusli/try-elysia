@@ -3,7 +3,15 @@ import sharp from "sharp";
 import { z } from "zod";
 import { fromTypes, openapi } from "@elysiajs/openapi";
 import * as v from "valibot";
+import { toJsonSchema } from "@valibot/to-json-schema";
 import { InMemoryStorage } from "./storage";
+import { authPlugin, requireAuth } from "./auth";
+import { cmsPlugin } from "./cms";
+import {
+  supabase,
+  testSupabaseConnection,
+  createAuthenticatedClient,
+} from "./supabase";
 
 const storage = new InMemoryStorage();
 
@@ -18,8 +26,74 @@ const app = new Elysia({
   .use(
     openapi({
       references: fromTypes(),
+      mapJsonSchema: {
+        zod: z.toJSONSchema,
+        valibot: toJsonSchema,
+      },
     })
   )
+  .use(authPlugin)
+  .use(cmsPlugin)
+  .derive(async ({ headers }) => {
+    // Extract token from Authorization header and verify with Supabase
+    const authHeader = (headers as Record<string, string | undefined>)
+      .authorization;
+
+    if (!authHeader || typeof authHeader !== "string") {
+      return {
+        user: null,
+        supabaseClient: supabase, // Return unauthenticated client
+      };
+    }
+
+    // Check if it starts with "Bearer " (case-insensitive)
+    const normalizedHeader = authHeader.trim();
+    const bearerPrefix = normalizedHeader.substring(0, 7).toLowerCase();
+    if (bearerPrefix !== "bearer ") {
+      return {
+        user: null,
+        supabaseClient: supabase,
+      };
+    }
+
+    const token = normalizedHeader.substring(7).trim();
+    if (!token || !supabase) {
+      return {
+        user: null,
+        supabaseClient: supabase,
+      };
+    }
+
+    try {
+      // Verify token with Supabase
+      const { data, error } = await supabase.auth.getUser(token);
+
+      if (error || !data.user) {
+        return {
+          user: null,
+          supabaseClient: supabase,
+        };
+      }
+
+      // Create authenticated Supabase client
+      const authenticatedClient = createAuthenticatedClient(token);
+
+      return {
+        user: {
+          id: data.user.id,
+          email: data.user.email || undefined,
+          ...data.user.user_metadata,
+        },
+        supabaseClient: authenticatedClient || supabase,
+      };
+    } catch (error) {
+      // Token verification failed
+      return {
+        user: null,
+        supabaseClient: supabase,
+      };
+    }
+  })
   .get("/", () => "Hello Elysia")
   .post("/set-cookie", ({ cookie: { profile } }) => {
     profile.value = "some-profile-data";
@@ -37,6 +111,20 @@ const app = new Elysia({
     };
   })
   .get("/health", () => "OK")
+  .get(
+    "/auth/me",
+    ({ user }) => {
+      return {
+        user: user || null,
+      };
+    },
+    {
+      detail: {
+        summary: "Get current authenticated user",
+        tags: ["Auth"],
+      },
+    }
+  )
   .post("/form", ({ body }) => body)
   .get("/user/:id", ({ params: { id } }) => id, {
     params: t.Object({
@@ -79,6 +167,7 @@ const app = new Elysia({
       body: t.Object({
         file: t.File(),
       }),
+      beforeHandle: requireAuth,
     }
   )
   .post(
@@ -96,15 +185,22 @@ const app = new Elysia({
       body: t.Object({
         file: t.File(),
       }),
+      beforeHandle: requireAuth,
     }
   )
-  .get("/images", async () => {
-    const filenames = await storage.list();
-    return {
-      images: filenames,
-      count: filenames.length,
-    };
-  })
+  .get(
+    "/images",
+    async () => {
+      const filenames = await storage.list();
+      return {
+        images: filenames,
+        count: filenames.length,
+      };
+    },
+    {
+      beforeHandle: requireAuth,
+    }
+  )
   .get("/image/:filename", async ({ params: { filename } }) => {
     const image = await storage.get(filename);
     if (!image) {
@@ -130,6 +226,10 @@ const app = new Elysia({
     });
   });
 
-console.log(`🦊 Elysia is running at port: ${process.env.PORT || 3001}`);
+// Test database connection on startup
+(async () => {
+  await testSupabaseConnection();
+  console.log(`🦊 Elysia is running at port: ${process.env.PORT || 3001}`);
+})();
 
 export default app;
