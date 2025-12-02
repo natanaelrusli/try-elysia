@@ -33,7 +33,6 @@ const app = new Elysia({
     })
   )
   .use(authPlugin)
-  .use(cmsPlugin)
   .derive(async ({ headers }) => {
     // Extract token from Authorization header and verify with Supabase
     const authHeader = (headers as Record<string, string | undefined>)
@@ -94,6 +93,7 @@ const app = new Elysia({
       };
     }
   })
+  .use(cmsPlugin)
   .get("/", () => "Hello Elysia")
   .post("/set-cookie", ({ cookie: { profile } }) => {
     profile.value = "some-profile-data";

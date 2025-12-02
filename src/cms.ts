@@ -21,6 +21,14 @@ function getCMSStorage(supabaseClient?: any) {
 }
 
 export const cmsPlugin = new Elysia({ name: "cms" })
+  .derive((context: any) => {
+    // Access derived context from parent app
+    // The parent app's derive adds user and supabaseClient
+    return {
+      user: context.user || null,
+      supabaseClient: context.supabaseClient || null,
+    };
+  })
   // Text Content Routes
   .post(
     "/cms/text",
