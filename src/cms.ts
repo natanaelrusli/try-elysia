@@ -1,13 +1,17 @@
 import { Elysia, t } from "elysia";
-import {
-  InMemoryCMSStorage,
-  type TextContent,
-  type BlogPost,
-  type PageConfig,
-} from "./cms-storage";
+import { InMemoryCMSStorage } from "./cms-storage";
 import { SupabaseCMSStorage } from "./cms-storage-supabase";
 import { supabase } from "./supabase";
 import { requireAuth } from "./auth";
+import {
+  validateAndSanitizeContent,
+  validateStringLength,
+  sanitizePlainText,
+  KEY_MAX_LENGTH,
+  TITLE_MAX_LENGTH,
+  EXCERPT_MAX_LENGTH,
+  SLUG_MAX_LENGTH,
+} from "./sanitize";
 
 // Helper to get CMS storage instance (uses authenticated client if available)
 function getCMSStorage(supabaseClient?: any) {
@@ -32,11 +36,29 @@ export const cmsPlugin = new Elysia({ name: "cms" })
   // Text Content Routes
   .post(
     "/cms/text",
-    async ({ body, user, supabaseClient }) => {
+    async ({ body, user, supabaseClient, set }) => {
+      // Validate key
+      const keyValidation = validateStringLength(
+        body.key,
+        KEY_MAX_LENGTH,
+        "Key"
+      );
+      if (!keyValidation.isValid) {
+        set.status = 400;
+        return { error: keyValidation.error };
+      }
+
+      // Validate and sanitize content
+      const contentValidation = validateAndSanitizeContent(body.content);
+      if (!contentValidation.isValid) {
+        set.status = 400;
+        return { error: contentValidation.error };
+      }
+
       const storage = getCMSStorage(supabaseClient);
       const textContent = await storage.saveTextContent({
-        key: body.key,
-        content: body.content,
+        key: sanitizePlainText(body.key),
+        content: contentValidation.sanitized,
       });
       return textContent;
     },
@@ -108,9 +130,35 @@ export const cmsPlugin = new Elysia({ name: "cms" })
   )
   .put(
     "/cms/text/:id",
-    async ({ params: { id }, body, supabaseClient }) => {
+    async ({ params: { id }, body, supabaseClient, set }) => {
+      const updateData: any = {};
+
+      // Validate and sanitize key if provided
+      if (body.key !== undefined) {
+        const keyValidation = validateStringLength(
+          body.key,
+          KEY_MAX_LENGTH,
+          "Key"
+        );
+        if (!keyValidation.isValid) {
+          set.status = 400;
+          return { error: keyValidation.error };
+        }
+        updateData.key = sanitizePlainText(body.key);
+      }
+
+      // Validate and sanitize content if provided
+      if (body.content !== undefined) {
+        const contentValidation = validateAndSanitizeContent(body.content);
+        if (!contentValidation.isValid) {
+          set.status = 400;
+          return { error: contentValidation.error };
+        }
+        updateData.content = contentValidation.sanitized;
+      }
+
       const storage = getCMSStorage(supabaseClient);
-      const updated = await storage.updateTextContent(id, body);
+      const updated = await storage.updateTextContent(id, updateData);
       if (!updated) {
         return new Response("Text content not found", { status: 404 });
       }
@@ -155,17 +203,63 @@ export const cmsPlugin = new Elysia({ name: "cms" })
   // Blog Post Routes
   .post(
     "/cms/blog",
-    async ({ body, user, supabaseClient }) => {
+    async ({ body, user, supabaseClient, set }) => {
+      // Validate title
+      const titleValidation = validateStringLength(
+        body.title,
+        TITLE_MAX_LENGTH,
+        "Title"
+      );
+      if (!titleValidation.isValid) {
+        set.status = 400;
+        return { error: titleValidation.error };
+      }
+
+      // Validate slug
+      const slugValidation = validateStringLength(
+        body.slug,
+        SLUG_MAX_LENGTH,
+        "Slug"
+      );
+      if (!slugValidation.isValid) {
+        set.status = 400;
+        return { error: slugValidation.error };
+      }
+
+      // Validate and sanitize content
+      const contentValidation = validateAndSanitizeContent(body.content);
+      if (!contentValidation.isValid) {
+        set.status = 400;
+        return { error: contentValidation.error };
+      }
+
+      // Validate and sanitize excerpt if provided
+      let sanitizedExcerpt: string | undefined;
+      if (body.excerpt !== undefined) {
+        const excerptValidation = validateStringLength(
+          body.excerpt,
+          EXCERPT_MAX_LENGTH,
+          "Excerpt"
+        );
+        if (!excerptValidation.isValid) {
+          set.status = 400;
+          return { error: excerptValidation.error };
+        }
+        sanitizedExcerpt = sanitizePlainText(body.excerpt);
+      }
+
       const storage = getCMSStorage(supabaseClient);
       const post = await storage.saveBlogPost({
-        title: body.title,
-        slug: body.slug,
-        content: body.content,
-        excerpt: body.excerpt,
+        title: sanitizePlainText(body.title),
+        slug: sanitizePlainText(body.slug),
+        content: contentValidation.sanitized,
+        excerpt: sanitizedExcerpt,
         authorId: user?.id || "unknown",
         published: body.published || false,
-        tags: body.tags,
-        featuredImage: body.featuredImage,
+        tags: body.tags?.map((tag: string) => sanitizePlainText(tag)),
+        featuredImage: body.featuredImage
+          ? sanitizePlainText(body.featuredImage)
+          : undefined,
       });
       return post;
     },
@@ -247,9 +341,78 @@ export const cmsPlugin = new Elysia({ name: "cms" })
   )
   .put(
     "/cms/blog/:id",
-    async ({ params: { id }, body, supabaseClient }) => {
+    async ({ params: { id }, body, supabaseClient, set }) => {
+      const updateData: any = {};
+
+      // Validate and sanitize title if provided
+      if (body.title !== undefined) {
+        const titleValidation = validateStringLength(
+          body.title,
+          TITLE_MAX_LENGTH,
+          "Title"
+        );
+        if (!titleValidation.isValid) {
+          set.status = 400;
+          return { error: titleValidation.error };
+        }
+        updateData.title = sanitizePlainText(body.title);
+      }
+
+      // Validate and sanitize slug if provided
+      if (body.slug !== undefined) {
+        const slugValidation = validateStringLength(
+          body.slug,
+          SLUG_MAX_LENGTH,
+          "Slug"
+        );
+        if (!slugValidation.isValid) {
+          set.status = 400;
+          return { error: slugValidation.error };
+        }
+        updateData.slug = sanitizePlainText(body.slug);
+      }
+
+      // Validate and sanitize content if provided
+      if (body.content !== undefined) {
+        const contentValidation = validateAndSanitizeContent(body.content);
+        if (!contentValidation.isValid) {
+          set.status = 400;
+          return { error: contentValidation.error };
+        }
+        updateData.content = contentValidation.sanitized;
+      }
+
+      // Validate and sanitize excerpt if provided
+      if (body.excerpt !== undefined) {
+        const excerptValidation = validateStringLength(
+          body.excerpt,
+          EXCERPT_MAX_LENGTH,
+          "Excerpt"
+        );
+        if (!excerptValidation.isValid) {
+          set.status = 400;
+          return { error: excerptValidation.error };
+        }
+        updateData.excerpt = sanitizePlainText(body.excerpt);
+      }
+
+      // Handle other optional fields
+      if (body.published !== undefined) {
+        updateData.published = body.published;
+      }
+      if (body.tags !== undefined) {
+        updateData.tags = body.tags.map((tag: string) =>
+          sanitizePlainText(tag)
+        );
+      }
+      if (body.featuredImage !== undefined) {
+        updateData.featuredImage = body.featuredImage
+          ? sanitizePlainText(body.featuredImage)
+          : undefined;
+      }
+
       const storage = getCMSStorage(supabaseClient);
-      const updated = await storage.updateBlogPost(id, body);
+      const updated = await storage.updateBlogPost(id, updateData);
       if (!updated) {
         return new Response("Blog post not found", { status: 404 });
       }
@@ -299,13 +462,50 @@ export const cmsPlugin = new Elysia({ name: "cms" })
   // Page Config Routes
   .post(
     "/cms/page-config",
-    async ({ body, supabaseClient }) => {
+    async ({ body, supabaseClient, set }) => {
+      // Validate pageKey
+      const keyValidation = validateStringLength(
+        body.pageKey,
+        KEY_MAX_LENGTH,
+        "Page key"
+      );
+      if (!keyValidation.isValid) {
+        set.status = 400;
+        return { error: keyValidation.error };
+      }
+
+      // Validate title
+      const titleValidation = validateStringLength(
+        body.title,
+        TITLE_MAX_LENGTH,
+        "Title"
+      );
+      if (!titleValidation.isValid) {
+        set.status = 400;
+        return { error: titleValidation.error };
+      }
+
+      // Validate and sanitize description if provided
+      let sanitizedDescription: string | undefined;
+      if (body.description !== undefined) {
+        const descValidation = validateStringLength(
+          body.description,
+          EXCERPT_MAX_LENGTH,
+          "Description"
+        );
+        if (!descValidation.isValid) {
+          set.status = 400;
+          return { error: descValidation.error };
+        }
+        sanitizedDescription = sanitizePlainText(body.description);
+      }
+
       const storage = getCMSStorage(supabaseClient);
       const config = await storage.savePageConfig({
-        pageKey: body.pageKey,
-        title: body.title,
-        description: body.description,
-        config: body.config,
+        pageKey: sanitizePlainText(body.pageKey),
+        title: sanitizePlainText(body.title),
+        description: sanitizedDescription,
+        config: body.config, // JSON config is validated by Elysia's type system
       });
       return config;
     },
@@ -379,9 +579,58 @@ export const cmsPlugin = new Elysia({ name: "cms" })
   )
   .put(
     "/cms/page-config/:id",
-    async ({ params: { id }, body, supabaseClient }) => {
+    async ({ params: { id }, body, supabaseClient, set }) => {
+      const updateData: any = {};
+
+      // Validate and sanitize pageKey if provided
+      if (body.pageKey !== undefined) {
+        const keyValidation = validateStringLength(
+          body.pageKey,
+          KEY_MAX_LENGTH,
+          "Page key"
+        );
+        if (!keyValidation.isValid) {
+          set.status = 400;
+          return { error: keyValidation.error };
+        }
+        updateData.pageKey = sanitizePlainText(body.pageKey);
+      }
+
+      // Validate and sanitize title if provided
+      if (body.title !== undefined) {
+        const titleValidation = validateStringLength(
+          body.title,
+          TITLE_MAX_LENGTH,
+          "Title"
+        );
+        if (!titleValidation.isValid) {
+          set.status = 400;
+          return { error: titleValidation.error };
+        }
+        updateData.title = sanitizePlainText(body.title);
+      }
+
+      // Validate and sanitize description if provided
+      if (body.description !== undefined) {
+        const descValidation = validateStringLength(
+          body.description,
+          EXCERPT_MAX_LENGTH,
+          "Description"
+        );
+        if (!descValidation.isValid) {
+          set.status = 400;
+          return { error: descValidation.error };
+        }
+        updateData.description = sanitizePlainText(body.description);
+      }
+
+      // Handle config if provided
+      if (body.config !== undefined) {
+        updateData.config = body.config;
+      }
+
       const storage = getCMSStorage(supabaseClient);
-      const updated = await storage.updatePageConfig(id, body);
+      const updated = await storage.updatePageConfig(id, updateData);
       if (!updated) {
         return new Response("Page config not found", { status: 404 });
       }
