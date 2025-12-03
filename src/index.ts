@@ -26,6 +26,13 @@ const app = new Elysia({
   .use(
     openapi({
       references: fromTypes(),
+      documentation: {
+        info: {
+          title: "Elysia API Documentation! :)",
+          version: "1.0.0",
+          description: "API documentation for the Elysiaapplication",
+        },
+      },
       mapJsonSchema: {
         zod: z.toJSONSchema,
         valibot: toJsonSchema,
