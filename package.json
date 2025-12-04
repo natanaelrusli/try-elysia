@@ -9,6 +9,7 @@
     "db:push": "bun --env-file=.env.local run scripts/migrate.ts"
   },
   "dependencies": {
+    "@elysiajs/cors": "^1.4.0",
     "@elysiajs/jwt": "^1.4.0",
     "@elysiajs/openapi": "^1.4.11",
     "@supabase/supabase-js": "^2.39.3",
@@ -21,7 +22,8 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "bun-types": "latest",
+    "typescript": "^5.9.3"
   },
   "module": "src/index.js"
 }

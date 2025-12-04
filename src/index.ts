@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import sharp from "sharp";
 import { z } from "zod";
 import { fromTypes, openapi } from "@elysiajs/openapi";
+import { cors } from "@elysiajs/cors";
 import * as v from "valibot";
 import { toJsonSchema } from "@valibot/to-json-schema";
 import { InMemoryStorage } from "./storage";
@@ -23,6 +24,14 @@ const app = new Elysia({
     sign: ["profile"],
   },
 })
+  .use(
+    cors({
+      origin: ["https://sienna-cms-web.natanael280198.workers.dev/"],
+      credentials: true, // Allow cookies and authorization headers
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    })
+  )
   .use(
     openapi({
       references: fromTypes(),
