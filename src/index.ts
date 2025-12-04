@@ -26,7 +26,10 @@ const app = new Elysia({
 })
   .use(
     cors({
-      origin: ["https://sienna-cms-web.natanael280198.workers.dev/"],
+      origin: [
+        "https://sienna-cms-web.natanael280198.workers.dev",
+        "http://localhost:5173",
+      ],
       credentials: true, // Allow cookies and authorization headers
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
